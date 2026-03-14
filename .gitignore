@@ -1,8 +1,26 @@
+# Claude Code local config (never push)
+.claude/
+.claude-flow/
+
+# Build output (deploy via Cloudflare, not git)
 node_modules/
 build/
 dist/
 coverage/
+
+# OS / editor
 .DS_Store
+.vscode/
+.idea/
+
+# Logs
 *.log
+
+# Secrets
 .env*
 !.env.example
+
+# Wrangler (Cloudflare local state)
+.wrangler/
+.dev.vars*
+!.dev.vars.example
