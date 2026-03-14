@@ -998,7 +998,7 @@ export default function MathGame() {
                 {(!scoreSubmitted && score > 0 && !isLoadingScores && (topScores.length < 10 || score > (topScores[topScores.length - 1]?.score || 0))) ? (
                   <form onSubmit={submitHighScore} className="flex flex-col gap-3">
                     <div className="text-sm text-slate-300 font-medium">Dein Score: <strong className="text-white text-lg ml-1">{score}</strong>. Trage dich in die Top 10 ein!</div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                        <input 
                          ref={inputRef}
                          type="text" 
@@ -1012,7 +1012,7 @@ export default function MathGame() {
                        <button 
                          type="submit"
                          disabled={!playerName.trim() || isSubmittingScore}
-                         className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold px-6 rounded-xl transition-all shadow-lg shadow-indigo-500/20"
+                         className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-3 sm:py-0 px-6 rounded-xl transition-all shadow-lg shadow-indigo-500/20"
                        >
                          {isSubmittingScore ? '...' : 'Speichern'}
                        </button>
