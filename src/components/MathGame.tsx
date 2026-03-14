@@ -55,6 +55,13 @@ interface HighscoreEntry {
   created_at: number;
 }
 
+interface PersonalHistoryEntry {
+  id: string;
+  score: number;
+  level: number;
+  date: string;
+}
+
 type GameState = 'MENU' | 'PLAYING' | 'GAME_OVER';
 
 // --- Constants ---
@@ -120,6 +127,8 @@ export default function MathGame() {
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
   const [topScores, setTopScores] = useState<HighscoreEntry[]>([]);
   const [isLoadingScores, setIsLoadingScores] = useState(false);
+  const [activeTab, setActiveTab] = useState<'GLOBAL' | 'HISTORY'>('GLOBAL');
+  const [personalHistory, setPersonalHistory] = useState<PersonalHistoryEntry[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // --- Refs for Game Loop (Mutable state without re-renders) ---
@@ -362,8 +371,32 @@ export default function MathGame() {
       }, '*');
     }
     
+    // Save to Local History
+    if (finalScore > 0) {
+      try {
+        const historyData = window.localStorage.getItem('neonMath_history');
+        let parsedData: PersonalHistoryEntry[] = [];
+        if (historyData) {
+            parsedData = JSON.parse(historyData);
+        }
+        
+        const newEntry: PersonalHistoryEntry = {
+            id: Math.random().toString(36).substr(2, 9),
+            score: finalScore,
+            level: levelRef.current,
+            date: new Date().toISOString()
+        };
+        
+        const updatedHistory = [newEntry, ...parsedData].sort((a,b) => b.score - a.score).slice(0, 50);
+        window.localStorage.setItem('neonMath_history', JSON.stringify(updatedHistory));
+        setPersonalHistory(updatedHistory);
+      } catch (e) {
+        console.error('Failed to save to local history', e);
+      }
+    }
+    
     // Fetch current highscores to determine if player made it to top 10
-    fetchHighScores();
+    fetchHighScores(levelRef.current);
 
     cancelAnimationFrame(requestRef.current);
   };
@@ -389,10 +422,10 @@ export default function MathGame() {
   // --- Highscore API ---
   const API_BASE = (import.meta as any).env?.DEV ? '/api' : 'https://games.codecho.de/api';
 
-  const fetchHighScores = useCallback(async () => {
+  const fetchHighScores = useCallback(async (level: number) => {
     setIsLoadingScores(true);
     try {
-      const response = await fetch(`${API_BASE}/scores?game=neo-math&period=alltime`);
+      const response = await fetch(`${API_BASE}/scores?game=neon-math-level-${level}&period=alltime`);
       if (response.ok) {
         const data = await response.json();
         setTopScores(data.entries || []);
@@ -417,14 +450,14 @@ export default function MathGame() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           student_name: playerName.trim(),
-          game: 'neo-math',
+          game: `neon-math-level-${levelRef.current}`,
           score: scoreRef.current
         })
       });
 
       if (response.ok) {
         setScoreSubmitted(true);
-        fetchHighScores(); // Refresh list immediately after submission
+        fetchHighScores(levelRef.current); // Refresh list immediately after submission
       } else {
         console.error('Failed to submit score');
       }
@@ -729,6 +762,18 @@ export default function MathGame() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  // Handle Initialization
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem('neonMath_history');
+      if (stored) {
+        setPersonalHistory(JSON.parse(stored));
+      }
+    } catch(e) {
+      console.error('Error loading history:', e);
+    }
+  }, []);
+
   // Handle Input Focus
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -976,46 +1021,106 @@ export default function MathGame() {
                 ) : (
                   <div className="flex flex-col">
                     <div className="flex items-center justify-between mb-3 px-2">
+                       <div className="flex gap-2 bg-slate-900/50 p-1 rounded-xl w-full">
+                         <button 
+                           onClick={() => setActiveTab('GLOBAL')}
+                           className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'GLOBAL' ? 'bg-indigo-600/80 text-white shadow-md' : 'text-slate-500 hover:bg-slate-800'}`}
+                         >
+                           Top 10 Global
+                         </button>
+                         <button 
+                           onClick={() => setActiveTab('HISTORY')}
+                           className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'HISTORY' ? 'bg-indigo-600/80 text-white shadow-md' : 'text-slate-500 hover:bg-slate-800'}`}
+                         >
+                           Mein Verlauf
+                         </button>
+                       </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between mb-3 px-2">
                        <div className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-                         <Trophy className="w-4 h-4 text-amber-400" /> Top 10 Highscores
+                         {activeTab === 'GLOBAL' ? <><Trophy className="w-4 h-4 text-amber-400" /> Top 10 (Level {levelRef.current})</> : 'Letzte Spiele'}
                        </div>
                        <div className="flex items-center gap-4">
                          {score > 0 && (
                            <span className="text-xs text-slate-400 font-mono">Dein Score: <strong className="text-white">{score}</strong></span>
                          )}
-                         <button onClick={fetchHighScores} className="text-slate-400 hover:text-white" title="Aktualisieren">
-                           <RefreshCw className={`w-4 h-4 ${isLoadingScores ? 'animate-spin' : ''}`} />
-                         </button>
+                         {activeTab === 'GLOBAL' && (
+                           <button onClick={() => fetchHighScores(levelRef.current)} className="text-slate-400 hover:text-white" title="Aktualisieren">
+                             <RefreshCw className={`w-4 h-4 ${isLoadingScores ? 'animate-spin' : ''}`} />
+                           </button>
+                         )}
                        </div>
                     </div>
                     
-                    <div className="w-full text-left text-sm">
-                      {isLoadingScores && topScores.length === 0 ? (
-                         <div className="py-8 flex items-center justify-center text-slate-500">Lädt Bestenliste...</div>
-                      ) : topScores.length === 0 ? (
-                         <div className="py-8 flex items-center justify-center text-slate-500">Noch keine Einträge.</div>
-                      ) : (
-                        <table className="w-full border-collapse">
-                          <tbody>
-                            {topScores.map((entry, idx) => {
-                              const isCurrent = entry.student_name === playerName && entry.score === score && scoreSubmitted;
-                              return (
-                                <tr key={entry.id} className={`border-b border-slate-700/50 last:border-0 transition-colors ${isCurrent ? 'bg-indigo-600/40 shadow-[inset_0_0_15px_rgba(79,70,229,0.6)] backdrop-blur-sm' : ''}`}>
-                                  <td className={`py-2 px-3 text-left w-8 font-mono ${isCurrent ? 'text-indigo-200 font-bold' : 'text-slate-500'}`}>
-                                    {idx + 1}.
-                                  </td>
-                                  <td className={`py-2 px-2 font-bold text-left ${isCurrent ? 'text-white text-base' : idx === 0 ? 'text-amber-400 text-base' : idx === 1 ? 'text-slate-300' : idx === 2 ? 'text-amber-700' : 'text-slate-200'}`}>
-                                    {entry.student_name}
-                                    {isCurrent && <span className="ml-2 text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider relative -top-0.5">DU</span>}
-                                  </td>
-                                  <td className={`py-2 px-3 text-right font-mono ${isCurrent ? 'text-cyan-300 font-black text-base drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'text-indigo-300'}`}>
-                                    {entry.score}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                    <div className="w-full text-left text-sm max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                      {activeTab === 'GLOBAL' && (
+                        <>
+                          {isLoadingScores && topScores.length === 0 ? (
+                             <div className="py-8 flex items-center justify-center text-slate-500">Lädt Bestenliste...</div>
+                          ) : topScores.length === 0 ? (
+                             <div className="py-8 flex items-center justify-center text-slate-500">Noch keine Einträge für Level {levelRef.current}.</div>
+                          ) : (
+                            <table className="w-full border-collapse">
+                              <tbody>
+                                {topScores.map((entry, idx) => {
+                                  const isCurrent = entry.student_name === playerName && entry.score === score && scoreSubmitted;
+                                  return (
+                                    <tr key={entry.id} className={`border-b border-slate-700/50 last:border-0 transition-colors ${isCurrent ? 'bg-indigo-600/40 shadow-[inset_0_0_15px_rgba(79,70,229,0.6)] backdrop-blur-sm' : ''}`}>
+                                      <td className={`py-2 px-3 text-left w-8 font-mono ${isCurrent ? 'text-indigo-200 font-bold' : 'text-slate-500'}`}>
+                                        {idx + 1}.
+                                      </td>
+                                      <td className={`py-2 px-2 font-bold text-left ${isCurrent ? 'text-white text-base' : idx === 0 ? 'text-amber-400 text-base' : idx === 1 ? 'text-slate-300' : idx === 2 ? 'text-amber-700' : 'text-slate-200'}`}>
+                                        {entry.student_name}
+                                        {isCurrent && <span className="ml-2 text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider relative -top-0.5">DU</span>}
+                                      </td>
+                                      <td className={`py-2 px-3 text-right font-mono ${isCurrent ? 'text-cyan-300 font-black text-base drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'text-indigo-300'}`}>
+                                        {entry.score}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </>
+                      )}
+                      
+                      {activeTab === 'HISTORY' && (
+                        <>
+                          {personalHistory.length === 0 ? (
+                             <div className="py-8 flex items-center justify-center text-slate-500">Du hast noch keine Spiele gespielt.</div>
+                          ) : (
+                            <table className="w-full border-collapse">
+                              <tbody>
+                                {personalHistory.map((entry, idx) => {
+                                  const date = new Date(entry.date);
+                                  return (
+                                    <tr key={entry.id} className="border-b border-slate-700/50 last:border-0 hover:bg-slate-800/30 transition-colors">
+                                      <td className="py-2 px-3 text-left w-8 font-mono text-slate-500">
+                                        {idx + 1}.
+                                      </td>
+                                      <td className="py-2 px-2 text-left">
+                                        <div className="flex flex-col">
+                                          <span className="text-white font-bold">{date.toLocaleDateString()}</span>
+                                          <span className="text-[10px] text-slate-400 font-mono">{date.toLocaleTimeString()}</span>
+                                        </div>
+                                      </td>
+                                      <td className="py-2 px-2 text-center">
+                                        <span className="inline-block bg-slate-800 border border-slate-700 text-indigo-300 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">
+                                          Lvl {entry.level}
+                                        </span>
+                                      </td>
+                                      <td className="py-2 px-3 text-right font-mono text-cyan-400 font-black">
+                                        {entry.score}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
