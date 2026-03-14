@@ -121,6 +121,7 @@ export default function MathGame() {
   const gameStateRef = useRef<GameState>('MENU');
   const levelRef = useRef(1);
   const bottomOffsetRef = useRef(0);
+  const currentTurretAngleRef = useRef(-Math.PI / 2);
   
   // Persistent Audio Context
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -600,19 +601,22 @@ export default function MathGame() {
     ctx.fill();
     
     // Draw Barrel (aims at lowest problem or straight up)
-    let targetX = baseX;
-    let targetY = 0;
+    let targetAngle = -Math.PI / 2;
     if (problemsRef.current.length > 0) {
         // Find lowest problem
         const lowest = problemsRef.current.reduce((prev, curr) => (prev.y > curr.y ? prev : curr));
-        targetX = lowest.x;
-        targetY = lowest.y;
+        targetAngle = Math.atan2(lowest.y - baseY, lowest.x - baseX);
     }
-    const angle = Math.atan2(targetY - baseY, targetX - baseX);
+    
+    // Smooth rotation interpolation
+    const angleDiff = targetAngle - currentTurretAngleRef.current;
+    const normalizedDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+    const rotationSpeed = 0.01; // Radians per ms
+    currentTurretAngleRef.current += normalizedDiff * Math.min(1, rotationSpeed * deltaTime);
     
     ctx.save();
     ctx.translate(baseX, baseY);
-    ctx.rotate(angle + Math.PI / 2); // Adjust for drawing upright
+    ctx.rotate(currentTurretAngleRef.current + Math.PI / 2); // Adjust for drawing upright
     ctx.fillStyle = '#64748b';
     ctx.fillRect(-5, -30, 10, 30);
     ctx.restore();
