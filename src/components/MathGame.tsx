@@ -48,6 +48,13 @@ interface FlyingNumber {
   scale: number;
 }
 
+interface HighscoreEntry {
+  id: number;
+  student_name: string;
+  score: number;
+  created_at: number;
+}
+
 type GameState = 'MENU' | 'PLAYING' | 'GAME_OVER';
 
 // --- Constants ---
@@ -106,6 +113,14 @@ export default function MathGame() {
   const [selectedLevel, setSelectedLevel] = useState(1); // 1, 2, or 3
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // --- Highscore State ---
+  const [playerName, setPlayerName] = useState('');
+  const [isSubmittingScore, setIsSubmittingScore] = useState(false);
+  const [scoreSubmitted, setScoreSubmitted] = useState(false);
+  const [topScores, setTopScores] = useState<HighscoreEntry[]>([]);
+  const [isLoadingScores, setIsLoadingScores] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // --- Refs for Game Loop (Mutable state without re-renders) ---
   const requestRef = useRef<number>(0);
@@ -346,6 +361,10 @@ export default function MathGame() {
         timestamp: new Date().toISOString()
       }, '*');
     }
+    
+    // Fetch current highscores to determine if player made it to top 10
+    fetchHighScores();
+
     cancelAnimationFrame(requestRef.current);
   };
 
@@ -366,6 +385,55 @@ export default function MathGame() {
       }
     }
   }, []);
+
+  // --- Highscore API ---
+  const API_BASE = (import.meta as any).env?.DEV ? '/api' : 'https://games.codecho.de/api';
+
+  const fetchHighScores = useCallback(async () => {
+    setIsLoadingScores(true);
+    try {
+      const response = await fetch(`${API_BASE}/scores?game=neo-math&period=alltime`);
+      if (response.ok) {
+        const data = await response.json();
+        setTopScores(data.entries || []);
+      } else {
+        console.error('Failed to fetch highscores');
+      }
+    } catch (err) {
+      console.error('Error fetching highscores:', err);
+    } finally {
+      setIsLoadingScores(false);
+    }
+  }, []);
+
+  const submitHighScore = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!playerName.trim() || isSubmittingScore || scoreSubmitted) return;
+
+    setIsSubmittingScore(true);
+    try {
+      const response = await fetch(`${API_BASE}/scores`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_name: playerName.trim(),
+          game: 'neo-math',
+          score: scoreRef.current
+        })
+      });
+
+      if (response.ok) {
+        setScoreSubmitted(true);
+        fetchHighScores(); // Refresh list immediately after submission
+      } else {
+        console.error('Failed to submit score');
+      }
+    } catch (err) {
+      console.error('Error submitting score:', err);
+    } finally {
+      setIsSubmittingScore(false);
+    }
+  };
 
   // --- Main Game Loop ---
 
@@ -873,29 +941,101 @@ export default function MathGame() {
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-20 flex items-center justify-center bg-red-900/20 backdrop-blur-md"
+            className="absolute inset-0 z-20 flex items-center justify-center bg-red-900/40 backdrop-blur-md overflow-y-auto pt-10 pb-10"
           >
-            <div className="bg-slate-900/90 p-8 rounded-3xl border border-red-500/30 shadow-2xl max-w-md w-full text-center pointer-events-auto">
-              <h2 className="text-5xl font-bold text-white mb-2 tracking-tight drop-shadow-lg">SPIEL VORBEI</h2>
-              <div className="text-red-400 font-mono text-xl mb-8">Basis zerstört</div>
+            <div className="bg-slate-900/95 p-6 md:p-8 rounded-3xl border border-red-500/30 shadow-[0_0_50px_rgba(220,38,38,0.2)] max-w-lg w-full text-center pointer-events-auto flex flex-col my-auto relative">
               
-              <div className="grid grid-cols-2 gap-4 mb-8">
-                <div className="bg-slate-800 p-4 rounded-xl">
-                  <div className="text-slate-400 text-xs uppercase tracking-wider mb-1">Endstand</div>
-                  <div className="text-3xl font-bold text-white">{score}</div>
-                </div>
-                <div className="bg-slate-800 p-4 rounded-xl">
-                  <div className="text-slate-400 text-xs uppercase tracking-wider mb-1">Rekord</div>
-                  <div className="text-3xl font-bold text-amber-400">{highScore}</div>
-                </div>
+              <h2 className="text-4xl md:text-5xl font-bold text-white mb-2 tracking-tight drop-shadow-lg">SPIEL VORBEI</h2>
+              <div className="text-red-400 font-mono text-lg md:text-xl mb-6">Basis zerstört</div>
+              
+              {/* Highscore Submission OR Leaderboard */}
+              <div className="bg-slate-800/50 rounded-2xl p-4 mb-6 border border-slate-700 w-full">
+                {(!scoreSubmitted && score > 0 && !isLoadingScores && (topScores.length < 10 || score > (topScores[topScores.length - 1]?.score || 0))) ? (
+                  <form onSubmit={submitHighScore} className="flex flex-col gap-3">
+                    <div className="text-sm text-slate-300 font-medium">Dein Score: <strong className="text-white text-lg ml-1">{score}</strong>. Trage dich in die Top 10 ein!</div>
+                    <div className="flex gap-2">
+                       <input 
+                         ref={inputRef}
+                         type="text" 
+                         value={playerName}
+                         onChange={(e) => setPlayerName(e.target.value.substring(0, 15))}
+                         placeholder="Dein Nickname"
+                         className="flex-1 bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-bold"
+                         maxLength={15}
+                         autoFocus
+                       />
+                       <button 
+                         type="submit"
+                         disabled={!playerName.trim() || isSubmittingScore}
+                         className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold px-6 rounded-xl transition-all shadow-lg shadow-indigo-500/20"
+                       >
+                         {isSubmittingScore ? '...' : 'Speichern'}
+                       </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="flex flex-col">
+                    <div className="flex items-center justify-between mb-3 px-2">
+                       <div className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                         <Trophy className="w-4 h-4 text-amber-400" /> Top 10 Highscores
+                       </div>
+                       <div className="flex items-center gap-4">
+                         {score > 0 && (
+                           <span className="text-xs text-slate-400 font-mono">Dein Score: <strong className="text-white">{score}</strong></span>
+                         )}
+                         <button onClick={fetchHighScores} className="text-slate-400 hover:text-white" title="Aktualisieren">
+                           <RefreshCw className={`w-4 h-4 ${isLoadingScores ? 'animate-spin' : ''}`} />
+                         </button>
+                       </div>
+                    </div>
+                    
+                    <div className="w-full text-left text-sm">
+                      {isLoadingScores && topScores.length === 0 ? (
+                         <div className="py-8 flex items-center justify-center text-slate-500">Lädt Bestenliste...</div>
+                      ) : topScores.length === 0 ? (
+                         <div className="py-8 flex items-center justify-center text-slate-500">Noch keine Einträge.</div>
+                      ) : (
+                        <table className="w-full border-collapse">
+                          <tbody>
+                            {topScores.map((entry, idx) => {
+                              const isCurrent = entry.student_name === playerName && entry.score === score && scoreSubmitted;
+                              return (
+                                <tr key={entry.id} className={`border-b border-slate-700/50 last:border-0 transition-colors ${isCurrent ? 'bg-indigo-600/40 shadow-[inset_0_0_15px_rgba(79,70,229,0.6)] backdrop-blur-sm' : ''}`}>
+                                  <td className={`py-2 px-3 text-left w-8 font-mono ${isCurrent ? 'text-indigo-200 font-bold' : 'text-slate-500'}`}>
+                                    {idx + 1}.
+                                  </td>
+                                  <td className={`py-2 px-2 font-bold text-left ${isCurrent ? 'text-white text-base' : idx === 0 ? 'text-amber-400 text-base' : idx === 1 ? 'text-slate-300' : idx === 2 ? 'text-amber-700' : 'text-slate-200'}`}>
+                                    {entry.student_name}
+                                    {isCurrent && <span className="ml-2 text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider relative -top-0.5">DU</span>}
+                                  </td>
+                                  <td className={`py-2 px-3 text-right font-mono ${isCurrent ? 'text-cyan-300 font-black text-base drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'text-indigo-300'}`}>
+                                    {entry.score}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <button 
-                onClick={startGame}
-                className="w-full py-4 px-6 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
-              >
-                <RefreshCw className="w-5 h-5" /> NOCHMAL VERSUCHEN
-              </button>
+              <div className="flex gap-3">
+                 <button 
+                   onClick={returnToMenu}
+                   className="flex-1 py-4 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-slate-700"
+                 >
+                   MENÜ
+                 </button>
+                 <button 
+                   onClick={startGame}
+                   className="flex-[2] py-4 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(79,70,229,0.3)]"
+                 >
+                   <Play className="w-5 h-5 fill-current" /> NOCHMAL SPIELEN
+                 </button>
+              </div>
             </div>
           </motion.div>
         )}
